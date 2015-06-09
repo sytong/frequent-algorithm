@@ -1,6 +1,6 @@
 # coding: utf-8
 
-class TestAlgorithm < MiniTest::Unit::TestCase
+class TestAlgorithm < Minitest::Test
 
   def setup
     @alg = Frequent::Algorithm.new(20,10,3)
@@ -11,64 +11,85 @@ class TestAlgorithm < MiniTest::Unit::TestCase
 
   def teardown
     @alg = nil
-    @data = nil
   end
 
   def test_process
-    data30 = @pi[0...30].scan(/./).each_slice(10).to_a
+    data30 = @pi[0...40].scan(/./).each_slice(10).to_a
 
     # N = 20 items per main window
     # b = 10 items per basic window
     # k = 3 (top-3 numerals)
-    topk = @alg.process(data30[0]) # only 1 summary in queue...
+    data30[0].each { |e| @alg.process(e) } # only 1 summary in queue...
     # 3141592653
+    assert_equal(0, @alg.window.length)    # window cleared
     assert_equal(1, @alg.queue.length)
     assert_equal(7, @alg.statistics.length)
     assert_equal(1, @alg.delta)
-    assert_equal(0, topk.length)
+    assert_empty(@alg.report)
 
-    topk = @alg.process(data30[1]) # 2nd summary in queue...
+    data30[1].each { |e| @alg.process(e) } # 2nd summary in queue...
     # 5897932384
+    assert_equal(0, @alg.window.length)    # window cleared
     assert_equal(2, @alg.queue.length)
     assert_equal(9, @alg.statistics.length)
     assert_equal(2, @alg.delta)
-    assert_equal(0, topk.length)
+    assert_empty(@alg.report)
 
     # after reading in the N/b + 1, or 3rd, window,
     # we can now start getting answers to top-k query
-    topk = @alg.process(data30[2]) # 3rd summary, delta updated
+    data30[2].each { |e| @alg.process(e) } # 3rd summary, delta updated
     # 6264338327
+    assert_equal(0, @alg.window.length)    # window cleared
     assert_equal(2, @alg.queue.length)
     assert_equal(8, @alg.statistics.length)
     assert_nil(@alg.statistics['1'])
     assert_equal(2, @alg.delta)
+
+    topk = @alg.report
     assert_equal(3, topk.length)
     assert_equal(5, topk['3'])
     assert_equal(3, topk['2'])
     assert_equal(3, topk['8'])
+
+    # this is to test whether the topk will be updated
+    # 9502884197
+    data30[3].each { |e| @alg.process(e) }  # 4th summary
+    assert_equal(0, @alg.window.length)    # window cleared
+    assert_equal(2, @alg.queue.length)
+    assert_equal(10, @alg.statistics.length)
+    assert_equal(2, @alg.delta)
+    
+    topk = @alg.report
+    assert_equal(3, topk.length)
+    assert_equal(3, topk['3'])  # different!
+    assert_equal(3, topk['2'])
+    assert_equal(3, topk['8'])
+
   end
 
   def test_summary_size_smaller_than_k
     # the 1st summary has 2 unique items only
-    topk = @alg.process(%w(1 1 1 1 1 1 2 2 2 2)) # 1st summary in queue...
+    %w(1 1 1 1 1 1 2 2 2 2).each { |e| @alg.process(e) } # 1st summary in queue...
     assert_equal(1, @alg.queue.length)
     assert_equal(2, @alg.statistics.length)
     assert_equal(4, @alg.delta)
-    assert_equal(0, topk.length)
+    assert_empty(@alg.report)
 
-    topk = @alg.process(%w(1 1 1 2 2 2 3 3 3 4)) #2nd summary in queue...
+    %w(1 1 1 2 2 2 3 3 3 4).each { |e| @alg.process(e) } #2nd summary in queue...
     assert_equal(2, @alg.queue.length)
     assert_equal(4, @alg.statistics.length)
     assert_equal(5, @alg.delta)
-    assert_equal(0, topk.length)
+    assert_empty(@alg.report)
 
     # after reading in the N/b + 1, or 3rd, window,
     # we can now start getting answers to top-k query
     # the first summary with 2 items was used as S'
-    topk = @alg.process(%w(1 1 1 2 2 3 3 3 3 4)) # 3rd summary, delta updated
+    %w(1 1 1 2 2 3 3 3 3 4).each { |e| @alg.process(e) } # 3rd summary, delta updated
     assert_equal(2, @alg.queue.length)
     assert_equal(4, @alg.statistics.length)
     assert_equal(3, @alg.delta)
+
+    topk = @alg.report
     assert_equal(3, topk.length)
     assert_equal(7, topk['3'])
     assert_equal(6, topk['1'])
@@ -95,6 +116,8 @@ class TestAlgorithm < MiniTest::Unit::TestCase
     assert_equal(0, @alg.queue.size)
     assert_equal(0, @alg.statistics.size)
     assert_equal(0, @alg.delta)
+    assert_equal(0, @alg.topk.length)
+    assert_equal(0, @alg.window.length)
   end
 
   def test_kth_largest
@@ -131,7 +154,7 @@ class TestAlgorithm < MiniTest::Unit::TestCase
       assert_equal(1, @alg.kth_largest(a4, 1))
       assert_equal(1, @alg.kth_largest(a4, a4.uniq.size+1))
     end
-  end
+  end 
 end
 
 =begin

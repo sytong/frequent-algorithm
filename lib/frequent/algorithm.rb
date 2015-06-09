@@ -1,5 +1,6 @@
 # coding: utf-8
 require 'frequent/version'
+require 'thread'
 
 module Frequent
 
@@ -16,6 +17,7 @@ module Frequent
   # * require a single-pass only
   #
   class Algorithm
+
     # @return [Integer] the number of items in the main window
     attr_reader :n
     # @return [Integer] the number of items in a basic window
@@ -28,6 +30,10 @@ module Frequent
     attr_reader :statistics
     # @return [Integer] minimum threshold for membership in top-k items
     attr_reader :delta
+    # @return [Hash<Object,Integer>] latest top k elements and their counts
+    attr_reader :topk
+    # @return [Array[Object]] the window of elements of size b
+    attr_reader :window
 
     # Initializes this top-k frequency-calculating instance.
     # 
@@ -39,6 +45,8 @@ module Frequent
     # @raise [ArgumentError] if k is not greater than 0
     # @raise [ArgumentError] if n/b is not greater than 1
     def initialize(n, b, k=1)
+      @lock = Mutex.new
+
       if n <= 0
         raise ArgumentError.new('n must be greater than 0')
       end
@@ -58,60 +66,71 @@ module Frequent
       @queue = [] 
       @statistics = {}
       @delta = 0
+      @topk = {}
+      @window = []
     end
 
     # Processes a single basic window of b items, by first adding
     # a summary of this basic window in the internal global queue;
     # and then updating the global statistics accordingly.
     # 
-    # @param [Array] an array of objects representing a basic window
-    def process(elements)
-      # Do we need this?
-      return if elements.length != @b
+    # @param [Object] an object from a data stream
+    def process(element)
+      @lock.synchronize do
+        @window << element
+        if @window.length == @b 
 
-      # Step 1
-      summary = {}
-      elements.each do |e|
-        if summary.key? e
-          summary[e] += 1
-        else
-          summary[e] = 1
+          # Step 1
+          summary = {}
+          @window.each do |e|
+            if summary.key? e
+              summary[e] += 1
+            else
+              summary[e] = 1
+            end
+          end
+          @window.clear   #current window cleared
+
+          # Step 2
+          @queue << summary
+
+          # Step 3
+          # Done, implicitly
+
+          # Step 4
+          summary.each do |k,v|
+            if @statistics.key? k
+              @statistics[k] += v
+            else
+              @statistics[k] = v
+            end
+          end
+
+          # Step 5
+          @delta += kth_largest(summary.values, @k)
+
+          # Step 6 - sizeOf(Q) > N/b
+          if @queue.length > @n/@b
+            # a
+            summary_p = @queue.shift
+            @delta -= kth_largest(summary_p.values, @k)
+
+            # b
+            summary_p.each { |k,v| @statistics[k] -= v }
+            @statistics.delete_if { |k,v| v <= 0 }
+
+            #c
+            @topk = @statistics.select { |k,v| v > @delta }
+          end
         end
       end
+    end
 
-      # Step 2
-      @queue << summary
-
-      # Step 3
-      # Done, implicitly
-
-      # Step 4
-      summary.each do |k,v|
-        if @statistics.key? k
-          @statistics[k] += v
-        else
-          @statistics[k] = v
-        end
-      end
-
-      # Step 5
-      @delta += kth_largest(summary.values, @k)
-
-      # Step 6 - sizeOf(Q) > N/b
-      if @queue.length > @n/@b
-        # a
-        summary_p = @queue.shift
-        @delta -= kth_largest(summary_p.values, @k)
-
-        # b
-        summary_p.each { |k,v| @statistics[k] -= v }
-        @statistics.delete_if { |k,v| v <= 0 }
-
-        #c
-        @statistics.select { |k,v| v > @delta }
-      else
-        {}
-      end
+    # Return the latest Tok K elements
+    #
+    # @return [Hash<Object,Integer>] a hash which contains the current top K elements and their counts
+    def report
+      @topk
     end
 
     # Returns the version for this gem.
